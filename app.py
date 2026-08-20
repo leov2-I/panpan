@@ -1,77 +1,57 @@
 import os
-import gradio as gr
-import requests
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from typing import List, Dict
 from huggingface_hub import InferenceClient
 
-# Inicialización segura del cliente de Hugging Face
+# Inicialización segura de la API y el cliente HF
+app = FastAPI(title="Panpan AI API")
 HF_TOKEN = os.getenv("HF_TOKEN")
 client = InferenceClient(token=HF_TOKEN)
 
-def responder_chat(mensaje, historial):
+# Modelo de datos para recibir los mensajes estructurados
+class ChatRequest(BaseModel):
+    mensaje: str
+    historial: List[Dict[str, str]] = []  # Lista de {"role": "user", "content": "..."}
+
+@app.get("/")
+def inicio():
+    return {"estado": "online", "mensaje": "API de Panpan corriendo con éxito en Render"}
+
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest):
     try:
-        # Usamos un modelo conversacional abierto y estable
         modelo = "meta-llama/Llama-3.2-3B-Instruct"
         
-        # Mapeo limpio de mensajes compatible con Gradio 5 y Hugging Face
+        # Construir los mensajes para Hugging Face
         mensajes_api = []
-        for turno in historial:
-            if isinstance(turno, dict):
-                usuario = turno.get("text", "") if turno.get("role") == "user" else ""
-                asistente = turno.get("text", "") if turno.get("role") == "assistant" else ""
-            else:
-                # Soporte para formato de tuplas si llega a venir así
-                try:
-                    usuario, asistente = turno[0], turno[1]
-                except Exception:
-                    usuario, asistente = turno, ""
-                
-            if usuario:
-                mensajes_api.append({"role": "user", "content": usuario})
-            if asistente:
-                mensajes_api.append({"role": "assistant", "content": asistente})
-                
-        mensajes_api.append({"role": "user", "content": mensaje})
+        for turno in request.historial:
+            mensajes_api.append({"role": turno.get("role", "user"), "content": turno.get("content", "")})
+            
+        mensajes_api.append({"role": "user", "content": request.mensaje})
         
-        respuesta_completa = ""
-        for token in client.chat_completion(
-            model=modelo,
-            messages=mensajes_api,
-            max_tokens=500,
-            stream=True
-        ):
-            token_texto = token.choices.delta.content
-            if token_texto:
-                respuesta_completa += token_texto
-                yield respuesta_completa
-                
+        # Generador para hacer streaming de la respuesta
+        def generar_respuesta():
+            try:
+                for token in client.chat_completion(
+                    model=modelo,
+                    messages=mensajes_api,
+                    max_tokens=500,
+                    stream=True
+                ):
+                    token_texto = token.choices.delta.content
+                    if token_texto:
+                        yield token_texto
+            except Exception as stream_err:
+                yield f"⚠️ Error en streaming: {str(stream_err)}"
+
+        return StreamingResponse(generar_respuesta(), media_type="text/plain")
+        
     except Exception as e:
-        yield f"⚠️ Ocurrió un error al procesar el mensaje: {str(e)}"
-
-# Interfaz gráfica corregida y limpia
-with gr.Blocks(theme="ocean", title="OpenAI UI - Custom Studio") as demo:
-    gr.Markdown("# 🤖 Mi Asistente Personal")
-    
-    with gr.Row():
-        with gr.Column(scale=1):
-            gr.Markdown("### ⚙️ Ajustes del Sistema")
-            gr.Markdown("Interfaz optimizada y lista para producción en Render.")
-            
-        with gr.Column(scale=2):
-            gr.Markdown("### 💬 Ventana de Conversación")
-            
-            # Componente de chat limpio
-            chatbot = gr.Chatbot(label="Chat Activo", height=550)
-            
-            msg = gr.Textbox(
-                placeholder="Envía un mensaje para iniciar la conversación...", 
-                label="Tu Mensaje"
-            )
-            clear = gr.ClearButton([msg, chatbot], value="Reiniciar Conversación")
-
-    # Envío estructurado del formulario de chat (Estilo Gradio 5)
-    msg.submit(responder_chat, inputs=[msg, chatbot], outputs=[chatbot])
-    msg.submit(lambda: "", None, [msg])
+        raise HTTPException(status_code=500, detail=f"Fallo en el servidor: {str(e)}")
 
 if __name__ == "__main__":
-    # SOLUCIÓN CRÍTICA: share=False evita que Render tire el ValueError de localhost
-    demo.launch(server_name="0.0.0.0", server_port=10000, share=False)
+    # Render requiere obligatoriamente escuchar en el puerto 10000 e interfaz 0.0.0.0
+    uvicorn.run(app, host="0.0.0.0", port=10000)
