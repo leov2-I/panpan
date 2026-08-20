@@ -3,17 +3,16 @@ import gradio as gr
 import requests
 from huggingface_hub import InferenceClient
 
-# Inicialización segura del cliente de Hugging Face
+# Inicialización del cliente de Hugging Face
 HF_TOKEN = os.getenv("HF_TOKEN")
 client = InferenceClient(token=HF_TOKEN)
 
 def responder_chat(mensaje, historial):
     try:
-        # Modelo conversacional estándar
         modelo = "meta-llama/Llama-3.2-3B-Instruct"
-        
-        # Estructuración de historial limpia para Gradio 5
         mensajes_api = []
+        
+        # Procesar el historial de forma compatible con Gradio 5
         for turno in historial:
             if isinstance(turno, dict):
                 usuario = turno.get("text", "") if turno.get("role") == "user" else ""
@@ -44,33 +43,29 @@ def responder_chat(mensaje, historial):
                 yield respuesta_completa
                 
     except Exception as e:
-        yield f"⚠️ Ocurrió un error al conectar con Hugging Face: {str(e)}"
+        yield f"⚠️ Error de conexión: {str(e)}"
 
-# --- TU PANEL VISUAL ORIGINAL ---
+# Interfaz gráfica original (Gradio Blocks con tema Ocean)
 with gr.Blocks(theme="ocean", title="OpenAI UI - Custom Studio") as demo:
     gr.Markdown("# 🤖 Mi Asistente Personal")
     
     with gr.Row():
         with gr.Column(scale=1):
             gr.Markdown("### ⚙️ Ajustes del Sistema")
-            gr.Markdown("Interfaz visual recuperada y optimizada para Render.")
+            gr.Markdown("Interfaz visual completamente optimizada.")
             
         with gr.Column(scale=2):
             gr.Markdown("### 💬 Ventana de Conversación")
-            
-            # Tu pantalla visual de mensajes
             chatbot = gr.Chatbot(label="Chat Activo", height=550)
-            
             msg = gr.Textbox(
                 placeholder="Envía un mensaje para iniciar la conversación...", 
                 label="Tu Mensaje"
             )
             clear = gr.ClearButton([msg, chatbot], value="Reiniciar Conversación")
 
-    # Manejo seguro de envío para evitar caídas de red locales en Linux
+    # Manejo de envío nativo para Gradio 5 (evita el bloqueo de localhost)
     msg.submit(responder_chat, inputs=[msg, chatbot], outputs=[chatbot])
     msg.submit(lambda: "", None, [msg])
 
 if __name__ == "__main__":
-    # share=False obliga a Render a abrir el puerto web directo sin saltar errores
     demo.launch(server_name="0.0.0.0", server_port=10000, share=False)
