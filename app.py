@@ -145,13 +145,15 @@ with gr.Blocks(theme=custom_theme, title="OpenAI UI - Custom Studio") as demo:
                     lines=5
                 )
                 
-        with gr.Column(scale=2):
+         with gr.Column(scale=2):
             gr.Markdown("### 💬 Ventana de Conversación")
-            chatbot = gr.Chatbot(label="Chat Activo", type="tuples", height=550)
+            # Se elimina el parámetro type="tuples" para evitar el error de compatibilidad
+            chatbot = gr.Chatbot(label="Chat Activo", height=550)
             msg = gr.Textbox(placeholder="Envía un mensaje para iniciar la conversación...", label="Tu Mensaje")
             clear = gr.ClearButton([msg, chatbot], value="Reiniciar Conversación")
 
     msg.submit(
+(
         responder_rol, 
         inputs=[msg, chatbot, system_prompt, bot_name, user_name, escena_inicial], 
         outputs=[chatbot]
